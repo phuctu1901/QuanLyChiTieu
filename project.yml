@@ -1,0 +1,68 @@
+name: QuanLyChiTieu
+options:
+  bundleIdPrefix: vn.quanlychitieu
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGNING_ALLOWED: "NO"
+
+targets:
+  QuanLyChiTieu:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    settings:
+      base:
+        INFOPLIST_FILE: App/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: vn.quanlychitieu.app
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_ENTITLEMENTS: App/QuanLyChiTieu.entitlements
+        SWIFT_STRICT_CONCURRENCY: complete
+    dependencies:
+      - target: ShareEx
+
+  ShareEx:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension
+    settings:
+      base:
+        INFOPLIST_FILE: ShareExtension/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: vn.quanlychitieu.app.shareex
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareEx.entitlements
+        SKIP_INSTALL: "YES"
+
+  QuanLyChiTieuTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: QuanLyChiTieu
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: vn.quanlychitieu.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/QuanLyChiTieu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/QuanLyChiTieu"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  QuanLyChiTieu:
+    build:
+      targets:
+        QuanLyChiTieu: all
+    test:
+      targets:
+        - QuanLyChiTieuTests
+  ShareEx:
+    build:
+      targets:
+        ShareEx: all
