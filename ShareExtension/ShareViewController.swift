@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 @objc(ShareViewController)
 final class ShareViewController: UIViewController {
 
-    private let appGroupID = "group.vn.quanlychitieu.shared"
+    private let appGroupID = "group.techcave.quanlychitieu.shared"
 
     override func viewDidLoad() {
         super.viewDidLoad()

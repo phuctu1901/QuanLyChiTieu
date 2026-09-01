@@ -19,7 +19,7 @@ struct SharedDefaults: @unchecked Sendable {
 
 enum AppConstants {
     /// App Group dùng chung giữa main app và Share Extension
-    static let appGroupID = "group.vn.quanlychitieu.shared"
+    static let appGroupID = "group.techcave.quanlychitieu.shared"
     static let appGroupContainerURL: URL? = {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID)
     }()
