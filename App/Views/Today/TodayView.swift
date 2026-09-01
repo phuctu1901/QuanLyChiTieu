@@ -15,6 +15,7 @@ struct TodayView: View {
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var showAddCash = false
     @State private var showReview = false
+    @State private var showPhotoPick = false
     @State private var processingCount = 0
 
     private var todayTransactions: [Transaction] {
@@ -54,6 +55,9 @@ struct TodayView: View {
             }
             .sheet(isPresented: $showReview) {
                 EveningReviewView()
+            }
+            .sheet(isPresented: $showPhotoPick) {
+                PhotoPickView()
             }
             .onChange(of: selectedPhotos) { _, items in
                 guard !items.isEmpty else { return }
@@ -130,7 +134,9 @@ struct TodayView: View {
     // MARK: - Buttons
 
     private var photoPickerButton: some View {
-        PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 10, matching: .images) {
+        Button {
+            showPhotoPick = true
+        } label: {
             Label("Nhập ảnh", systemImage: "photo.badge.plus")
         }
         .disabled(processingCount > 0)

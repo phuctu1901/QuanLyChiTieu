@@ -15,22 +15,25 @@ final class AppServices {
     let pipeline: ExtractionPipeline
     let shareInbox: ShareInboxService
     let photoMonitor: PhotoMonitor
+    let processedStore: ProcessedAssetStore
     let container: ModelContainer
 
     init(container: ModelContainer) {
         self.container = container
         let imageStore = ImageStore()
         let store = PendingStore(container: container)
+        let processedStore = ProcessedAssetStore()
         pipeline = ExtractionPipeline(imageStore: imageStore, persist: store.persist)
         shareInbox = ShareInboxService(pipeline: pipeline)
-        photoMonitor = PhotoMonitor(pipeline: pipeline)
+        photoMonitor = PhotoMonitor(pipeline: pipeline, processedStore: processedStore)
+        self.processedStore = processedStore
     }
 
     /// Gọi khi scenePhase = .active: drain inbox từ Share Extension + catch-up photo scan
     func activate() {
         Task { await shareInbox.drainInbox() }
         photoMonitor.start()
-        photoMonitor.catchUpScan()
+        photoMonitor.autoScan()
     }
 
     func deactivate() {

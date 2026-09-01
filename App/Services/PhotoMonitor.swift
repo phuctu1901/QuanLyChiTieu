@@ -2,83 +2,109 @@ import Foundation
 import Photos
 import UIKit
 
-/// Theo dõi Photo Library: nhận change event khi app đang chạy + catch-up scan ảnh screenshot mới mỗi lần app active.
-final class PhotoMonitor: NSObject, PHPhotoLibraryChangeObserver {
+/// Tự động quét thư viện ảnh: nhận change event khi app chạy + auto-scan ảnh screenshot
+/// chưa xử lý mỗi lần app active. Quét TOÀN BỘ thư viện (không lọc ngày) — ProcessedAssetStore
+/// đảm bảo không xử lý lại ảnh đã qua pipeline.
+///
+/// `pendingScreenshotAssetIDs()` fetch toàn bộ screenshots rồi lọc bằng Set đã xử lý —
+/// O(tổng screenshot), chấp nhận được với thư viện cá nhân (vài trăm đến vài nghìn ảnh).
+final class PhotoMonitor: NSObject, PHPhotoLibraryChangeObserver, @unchecked Sendable {
     let pipeline: ExtractionPipeline
+    let processedStore: ProcessedAssetStore
 
+    private let stateLock = NSLock()
     private var started = false
 
-    init(pipeline: ExtractionPipeline) {
+    init(pipeline: ExtractionPipeline, processedStore: ProcessedAssetStore) {
         self.pipeline = pipeline
+        self.processedStore = processedStore
         super.init()
     }
 
     // MARK: - Lifecycle
 
     func start() {
+        stateLock.lock(); defer { stateLock.unlock() }
         guard !started else { return }
         started = true
         PHPhotoLibrary.shared().register(self)
     }
 
     func stop() {
+        stateLock.lock(); defer { stateLock.unlock() }
         guard started else { return }
         started = false
         PHPhotoLibrary.shared().unregisterChangeObserver(self)
     }
 
-    // MARK: - Catch-up scan
+    // MARK: - Auto scan
 
-    /// Quét ảnh screenshot chụp sau lần scan cuối, ingest từng ảnh.
-    func catchUpScan() {
-        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard status == .authorized || status == .limited else { return }
+    /// Quét mọi ảnh screenshot chưa xử lý rồi ingest. Tự xin quyền nếu chưa từng hỏi.
+    /// Không lọc theo ngày — quét toàn bộ thư viện ngay lần đầu (phục vụ test với ảnh cũ).
+    func autoScan() {
+        Task { [pipeline, processedStore] in
+            var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            if status == .notDetermined {
+                status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            }
+            guard status == .authorized || status == .limited else { return }
+            await Self.scanUnprocessed(pipeline: pipeline, processedStore: processedStore)
+        }
+    }
 
-        let lastScan = AppConstants.sharedDefaults.date(forKey: AppConstants.lastPhotoScanKey)
-        var options = PHFetchOptions()
-        options.predicate = NSPredicate(
-            format: "mediaSubtypes == %d AND creationDate > %@",
-            PHAssetMediaSubtype.photoScreenshot.rawValue,
-            (lastScan ?? Date.distantPast) as NSDate
-        )
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
-        options.fetchLimit = 20
+    /// Scan tĩnh — không đụng instance state, an toàn concurrency.
+    static func scanUnprocessed(pipeline: ExtractionPipeline, processedStore: ProcessedAssetStore) async {
+        let pendingIDs = processedStore.pendingScreenshotAssetIDs()
+        guard !pendingIDs.isEmpty else { return }
 
-        let assets = PHAsset.fetchAssets(with: options)
-        guard assets.count > 0 else {
-            AppConstants.sharedDefaults.set(Date(), forKey: AppConstants.lastPhotoScanKey)
-            return
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: pendingIDs, options: nil)
+        let imageManager = PHImageManager.default()
+
+        var assetList: [PHAsset] = []
+        assets.enumerateObjects { asset, _, _ in
+            assetList.append(asset)
         }
 
-        let imageManager = PHImageManager.default()
-        let lastDate = lastScan
-        let pipeline = self.pipeline
-        assets.enumerateObjects { asset, _, _ in
-            // Ảnh chụp trước lần scan cuối (đã xử lý rồi) bỏ qua
-            if let lastDate, asset.creationDate! < lastDate { return }
+        for asset in assetList {
+            guard let data = await Self.loadData(for: asset, manager: imageManager) else {
+                processedStore.markProcessed([asset.localIdentifier])
+                continue
+            }
+            _ = await pipeline.ingest(imageData: data, source: .ocrAutoScan)
+            processedStore.markProcessed([asset.localIdentifier])
+        }
+    }
+
+    /// Load ảnh pixel data (tối đa ~1500px) cho pipeline OCR.
+    static func loadData(for asset: PHAsset, manager: PHImageManager) async -> Data? {
+        await withCheckedContinuation { continuation in
             let opts = PHImageRequestOptions()
-            opts.isSynchronous = false
             opts.deliveryMode = .highQualityFormat
-            opts.isNetworkAccessAllowed = false
-            imageManager.requestImage(
+            opts.isNetworkAccessAllowed = true
+            manager.requestImage(
                 for: asset,
                 targetSize: CGSize(width: 1500, height: 1500),
                 contentMode: .aspectFit,
                 options: opts
-            ) { image, _ in
-                guard let image, let data = image.jpegData(compressionQuality: 0.85) else { return }
-                Task { await pipeline.ingest(imageData: data, source: .ocrAutoScan) }
+            ) { image, info in
+                let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+                guard !degraded else { return }
+                guard let image else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: image.jpegData(compressionQuality: 0.85))
             }
         }
-        AppConstants.sharedDefaults.set(Date(), forKey: AppConstants.lastPhotoScanKey)
     }
 
     // MARK: - PHPhotoLibraryChangeObserver
 
     func photoLibraryDidChange(_ changeInstance: PHChange) {
-        // Kiểm tra quyền trước khi quét (đăng ký observer tự có quyền khi authorized)
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard status == .authorized || status == .limited else { return }
-        catchUpScan()
+        Task { [pipeline, processedStore] in
+            await Self.scanUnprocessed(pipeline: pipeline, processedStore: processedStore)
+        }
     }
 }
