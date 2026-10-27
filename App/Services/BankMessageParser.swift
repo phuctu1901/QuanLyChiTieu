@@ -519,11 +519,11 @@ enum BankMessageParser {
 
     private static func cleanContactName(_ s: String) -> String {
         var clean = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Bỏ số thứ tự ở đầu dòng kiểu "07.NGUYEN PHUC TU" -> "NGUYEN PHUC TU"
+        // Bỏ số thứ tự ở đầu dòng kiểu "07.NGUYEN VAN A" -> "NGUYEN VAN A"
         clean = clean.replacingOccurrences(of: #"^\d{1,2}\.\s*"#, with: "", options: .regularExpression)
         // Bỏ ký tự nhiễu đặc biệt ở đầu dòng (dấu hai chấm, gạch ngang, dấu chấm, ngoặc...)
         clean = clean.replacingOccurrences(of: #"^[^\p{L}\p{N}]+"#, with: "", options: .regularExpression)
-        // Bỏ mã tham chiếu VCB dính vào tên: "TUAN_102881306472" → "TUAN"
+        // Bỏ mã tham chiếu VCB dính vào tên: "TUAN_123456789012" → "TUAN"
         clean = clean.replacingOccurrences(of: #"[_-]\d{6,}$"#, with: "", options: .regularExpression)
         // Bỏ ký tự đặc biệt ở cuối
         clean = clean.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
