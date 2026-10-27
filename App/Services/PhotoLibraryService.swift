@@ -10,6 +10,7 @@ enum PhotoAuthStatus: Equatable {
 }
 
 /// Nghiệp vụ thư viện ảnh: quyền, fetch screenshot, load ảnh pixel.
+/// Dùng `PHCachingImageManager` để prefetch + cache thumbnail — tránh lag grid.
 struct PhotoLibraryService: Sendable {
     let processedStore: ProcessedAssetStore
 
@@ -39,11 +40,10 @@ struct PhotoLibraryService: Sendable {
         }
     }
 
-    // MARK: - Fetch screenshots (TOÀN BỘ thư viện, không lọc ngày — phục vụ test)
+    // MARK: - Fetch screenshots
 
-    /// Tất cả ảnh screenshot trong thư viện, mới nhất trước.
-    /// Fallback: nếu không có ảnh nào được đánh dấu screenshot (thư viện test/import),
-    /// trả mọi ảnh — dedup + auto-tick vẫn hoạt động đúng nhờ ProcessedAssetStore.
+    /// Tất cả ảnh chụp màn hình (subtype photoScreenshot) trong thư viện, mới nhất trước.
+    /// KHÔNG fallback lấy toàn bộ ảnh — chỉ screenshot liên quan giao dịch mới được xử lý.
     func fetchAllScreenshots() -> [PHAsset] {
         guard Self.authStatus() == .authorized || Self.authStatus() == .limited else { return [] }
 
@@ -57,14 +57,6 @@ struct PhotoLibraryService: Sendable {
         PHAsset.fetchAssets(with: screenshotOptions).enumerateObjects { asset, _, _ in
             assets.append(asset)
         }
-
-        if assets.isEmpty {
-            let allOptions = PHFetchOptions()
-            allOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-            PHAsset.fetchAssets(with: allOptions).enumerateObjects { asset, _, _ in
-                assets.append(asset)
-            }
-        }
         return assets
     }
 
@@ -73,7 +65,20 @@ struct PhotoLibraryService: Sendable {
         fetchAllScreenshots().filter { !processedStore.isProcessed($0.localIdentifier) }
     }
 
-    // MARK: - Load ảnh
+    /// TOÀN BỘ ảnh trong thư viện (kể cả ảnh chụp thường), mới nhất trước —
+    /// cho tab "Tất cả ảnh" chọn tay (ảnh lưu từ chat, ảnh chụp giấy tờ...).
+    func fetchAllPhotos() -> [PHAsset] {
+        guard Self.authStatus() == .authorized || Self.authStatus() == .limited else { return [] }
+        var assets: [PHAsset] = []
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        PHAsset.fetchAssets(with: options).enumerateObjects { asset, _, _ in
+            assets.append(asset)
+        }
+        return assets
+    }
+
+    // MARK: - Load ảnh (high quality — cho pipeline OCR)
 
     /// Load ảnh full-ish (tối đa 1500px) cho pipeline OCR.
     func loadImageData(for asset: PHAsset, maxDimension: CGFloat = 1500) async -> Data? {
@@ -99,11 +104,77 @@ struct PhotoLibraryService: Sendable {
             }
         }
     }
+}
 
-    /// Load thumbnail cho lưới chọn ảnh.
-    func loadThumbnail(for asset: PHAsset, side: CGFloat) async -> UIImage? {
-        let data = await loadImageData(for: asset, maxDimension: side)
-        guard let data else { return nil }
-        return UIImage(data: data)
+// MARK: - Thumbnail Cache Manager
+
+/// Singleton quản lý cache thumbnail cho grid ảnh.
+/// Dùng `PHCachingImageManager` (best practice từ Apple/YPImagePicker/TLPhotoPicker)
+/// thay vì `PHImageManager.default()` — prefetch theo scroll, cancel khi cell recycle.
+/// PHCachingImageManager thread-safe — KHÔNG cần @MainActor.
+final class ThumbnailCacheManager: @unchecked Sendable {
+    static let shared = ThumbnailCacheManager()
+
+    private let cachingManager = PHCachingImageManager()
+    /// Kích thước thumbnail (pixel) — cell ~110pt * 3x scale ≈ 330, round to 240 cho nhẹ.
+    let thumbnailSize = CGSize(width: 240, height: 240)
+
+    /// Options dùng chung cho cả cache + request (PHẢI KHỚP để cache hit).
+    let thumbnailOptions: PHImageRequestOptions = {
+        let opt = PHImageRequestOptions()
+        opt.deliveryMode = .opportunistic   // degraded → final (mượt)
+        opt.resizeMode = .fast              // resize nhanh, không cần chính xác pixel
+        opt.isNetworkAccessAllowed = false   // thumbnail không cần iCloud
+        opt.isSynchronous = false
+        return opt
+    }()
+
+    private init() {}
+
+    /// Prefetch một batch asset (gọi khi grid sắp hiện).
+    func startCaching(assets: [PHAsset]) {
+        cachingManager.startCachingImages(
+            for: assets,
+            targetSize: thumbnailSize,
+            contentMode: .aspectFill,
+            options: thumbnailOptions
+        )
+    }
+
+    /// Huỷ prefetch khi asset ra khỏi viewport.
+    func stopCaching(assets: [PHAsset]) {
+        cachingManager.stopCachingImages(
+            for: assets,
+            targetSize: thumbnailSize,
+            contentMode: .aspectFill,
+            options: thumbnailOptions
+        )
+    }
+
+    /// Reset toàn bộ cache (khi dismiss screen).
+    func resetCache() {
+        cachingManager.stopCachingImagesForAllAssets()
+    }
+
+    /// Load thumbnail cho 1 cell. Trả `PHImageRequestID` để caller cancel nếu cell recycle.
+    /// Callback có thể gọi 2 lần (degraded → final) do `.opportunistic`.
+    @discardableResult
+    func loadThumbnail(
+        for asset: PHAsset,
+        completion: @escaping (UIImage?) -> Void
+    ) -> PHImageRequestID {
+        cachingManager.requestImage(
+            for: asset,
+            targetSize: thumbnailSize,
+            contentMode: .aspectFill,
+            options: thumbnailOptions
+        ) { image, _ in
+            completion(image)
+        }
+    }
+
+    /// Cancel request đang chạy (khi cell disappear).
+    func cancelRequest(_ requestID: PHImageRequestID) {
+        cachingManager.cancelImageRequest(requestID)
     }
 }

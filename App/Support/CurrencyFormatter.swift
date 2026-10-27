@@ -25,4 +25,22 @@ enum CurrencyFormatter {
         f.currencySymbol = "₫"
         return f.string(from: NSNumber(value: amount)) ?? "\(amount) ₫"
     }
+
+    /// Nhóm 3 chữ số bằng "." cho ô nhập: "1234567" → "1.234.567".
+    /// Bỏ mọi ký tự không phải số trước khi nhóm — parse vẫn dùng filter(\.isNumber).
+    static func groupDigits(_ text: String) -> String {
+        let digits = text.filter(\.isNumber)
+        guard !digits.isEmpty else { return "" }
+        var result = ""
+        let chars = Array(digits)
+        for (index, char) in chars.enumerated() {
+            // Chèn "." trước chữ số mỗi khi cách cuối chuỗi một bội số của 3
+            let remaining = chars.count - index
+            if index > 0 && remaining % 3 == 0 {
+                result += "."
+            }
+            result.append(char)
+        }
+        return result
+    }
 }

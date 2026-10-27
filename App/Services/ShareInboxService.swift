@@ -22,7 +22,7 @@ final class ShareInboxService: Sendable {
                 try? fm.removeItem(at: url)
                 continue
             }
-            _ = await pipeline.ingest(imageData: data, source: .shareExt)
+            _ = await pipeline.ingest(imageData: data, source: .shareExt, skipClassification: true)
             try? fm.removeItem(at: url)
             count += 1
         }

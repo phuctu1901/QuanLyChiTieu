@@ -19,7 +19,7 @@ final class ExtractionPipelineTests: XCTestCase {
             rawText: "MB Bank\n-500,000đ",
             parsed: ParsedTransaction(from: BankParseResult(
                 amount: 500000, direction: .expense,
-                occurredAt: Date(), note: "Chuyen tien",
+                occurredAt: Date(), occurredAtSource: .fullDateTime, note: "Chuyen tien",
                 bankName: "MB Bank", suggestedCategoryName: "Chuyển tiền"
             )),
             source: .manualPhoto

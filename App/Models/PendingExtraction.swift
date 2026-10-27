@@ -1,13 +1,30 @@
 import Foundation
 import SwiftData
 
+/// Nguồn của thời điểm bóc tách được — để UI chú thích độ tin cậy.
+enum OccurredAtSource: String, Codable {
+    /// Ngày + giờ đầy đủ trong ảnh ("15/08/2026 21:34")
+    case fullDateTime
+    /// Ngày có trong ảnh, giờ lấy từ status bar screenshot
+    case dateWithStatusBarTime
+    /// Chỉ ngày trong ảnh, không rõ giờ
+    case dateOnly
+    /// Không bóc được — fallback theo giờ chụp screenshot (asset creationDate)
+    case screenshotTime
+    /// Không bóc được, không có giờ chụp — dùng giờ tạo pending
+    case unknown
+}
+
 /// Kết quả bóc tách từ OCR — struct Codable thuần, không phải @Model.
 struct ParsedTransaction: Codable, Equatable {
     var amount: Int?
     var direction: Direction = .expense
     var occurredAt: Date?
+    /// Chú thích nguồn occurredAt — nil khi decode data cũ.
+    var occurredAtSource: OccurredAtSource?
     var note: String?
     var bankName: String?
+    var contactName: String?
     var suggestedCategoryName: String?
 
     /// Số field parse được / tổng field quan trọng (0...1)

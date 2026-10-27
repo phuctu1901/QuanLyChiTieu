@@ -14,6 +14,14 @@ enum Source: String, Codable {
     case cash
 }
 
+enum TransactionType: String, Codable {
+    case normal         // Chi tiêu / Thu nhập bình thường
+    case loanGiven      // Mình cho người khác mượn tiền (Tiền ra, nhưng không phải expense)
+    case loanCollected  // Người khác trả tiền cho mình (Tiền vào, nhưng không phải income)
+    case borrowed       // Mình mượn tiền người khác (Tiền vào, nhưng không phải income)
+    case debtPaid       // Mình trả nợ người khác (Tiền ra, nhưng không phải expense)
+}
+
 @Model
 final class Transaction {
     #Unique<Transaction>([\.dedupKey])
@@ -21,6 +29,8 @@ final class Transaction {
     var id: UUID = UUID()
     var amount: Int = 0
     var directionRaw: String = Direction.expense.rawValue
+    var typeRaw: String = TransactionType.normal.rawValue
+    var contactName: String?
     var occurredAt: Date = Date()
     var note: String = ""
     var bankName: String?
@@ -35,6 +45,11 @@ final class Transaction {
     var direction: Direction {
         get { Direction(rawValue: directionRaw) ?? .expense }
         set { directionRaw = newValue.rawValue }
+    }
+
+    var type: TransactionType {
+        get { TransactionType(rawValue: typeRaw) ?? .normal }
+        set { typeRaw = newValue.rawValue }
     }
 
     var source: Source {
@@ -53,6 +68,8 @@ final class Transaction {
     init(
         amount: Int,
         direction: Direction,
+        type: TransactionType = .normal,
+        contactName: String? = nil,
         occurredAt: Date,
         note: String,
         bankName: String? = nil,
@@ -63,6 +80,8 @@ final class Transaction {
         self.id = UUID()
         self.amount = abs(amount)
         self.directionRaw = direction.rawValue
+        self.typeRaw = type.rawValue
+        self.contactName = contactName
         self.occurredAt = occurredAt
         self.note = note
         self.bankName = bankName

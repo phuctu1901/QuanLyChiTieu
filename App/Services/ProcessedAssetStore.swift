@@ -9,7 +9,8 @@ struct ProcessedAssetStore: @unchecked Sendable {
 
     private let defaults: UserDefaults?
 
-    init(defaults: UserDefaults? = UserDefaults(suiteName: AppConstants.appGroupID)) {
+    /// Dùng cùng defaults đã được check fallback trong AppConstants.
+    init(defaults: UserDefaults? = AppConstants.sharedDefaults.defaults) {
         self.defaults = defaults
     }
 
@@ -35,10 +36,15 @@ struct ProcessedAssetStore: @unchecked Sendable {
         return ids.filter { !processed.contains($0) }
     }
 
+    /// Xoá toàn bộ lịch sử quét (buộc hệ thống quét lại từ đầu ở lần tới)
+    func clear() {
+        lock.lock(); defer { lock.unlock() }
+        defaults?.removeObject(forKey: Self.key)
+    }
+
     /// Danh sách ảnh screenshot trong thư viện CHƯA xử lý (để auto-scan ingest).
-    /// Ưu tiên ảnh có subtype photoScreenshot; nếu thư viện không có ảnh nào
-    /// được đánh dấu screenshot (VD ảnh import qua simctl/test không có cờ),
-    /// fallback quét mọi ảnh chưa xử lý — dedup hash sẽ loại trùng lặp.
+    /// Chỉ lấy ảnh có subtype photoScreenshot (ảnh chụp màn hình) — KHÔNG fallback
+    /// lấy toàn bộ thư viện: ảnh thường (selfie, phong cảnh…) sẽ không bị nhặt vào.
     func pendingScreenshotAssetIDs() -> [String] {
         guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
             || PHPhotoLibrary.authorizationStatus(for: .readWrite) == .limited else { return [] }
@@ -46,27 +52,17 @@ struct ProcessedAssetStore: @unchecked Sendable {
         var result: [String] = []
         let processed = loadIDs()
 
-        func collect(_ assets: PHFetchResult<PHAsset>) {
-            assets.enumerateObjects { asset, _, _ in
-                if !processed.contains(asset.localIdentifier) {
-                    result.append(asset.localIdentifier)
-                }
-            }
-        }
-
         let screenshotOptions = PHFetchOptions()
         screenshotOptions.predicate = NSPredicate(
             format: "mediaSubtypes == %d",
             PHAssetMediaSubtype.photoScreenshot.rawValue
         )
+        screenshotOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         let screenshots = PHAsset.fetchAssets(with: screenshotOptions)
-        collect(screenshots)
-
-        if result.isEmpty {
-            // Fallback: chưa có screenshot nào được đánh dấu (thư viện test)
-            let allOptions = PHFetchOptions()
-            allOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-            collect(PHAsset.fetchAssets(with: allOptions))
+        screenshots.enumerateObjects { asset, _, _ in
+            if !processed.contains(asset.localIdentifier) {
+                result.append(asset.localIdentifier)
+            }
         }
         return result
     }

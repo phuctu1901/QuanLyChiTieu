@@ -2,7 +2,7 @@ name: QuanLyChiTieu
 options:
   bundleIdPrefix: techcave.quanlychitieu
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
   createIntermediateGroups: true
 
 settings:
@@ -24,6 +24,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_ENTITLEMENTS: App/QuanLyChiTieu.entitlements
         SWIFT_STRICT_CONCURRENCY: complete
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - target: ShareEx
 

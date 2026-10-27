@@ -29,10 +29,15 @@ enum AppConstants {
         appGroupContainerURL?.appendingPathComponent("inbox", isDirectory: true)
     }
 
-    /// UserDefaults dùng chung app + extension
-    static let sharedDefaults: SharedDefaults = SharedDefaults(
-        defaults: UserDefaults(suiteName: appGroupID)
-    )
+    /// UserDefaults dùng chung app + extension.
+    /// Fallback về `.standard` khi App Group chưa provision (tránh warning CFPrefs trên simulator).
+    static let sharedDefaults: SharedDefaults = {
+        if let _ = appGroupContainerURL,
+           let suite = UserDefaults(suiteName: appGroupID) {
+            return SharedDefaults(defaults: suite)
+        }
+        return SharedDefaults(defaults: .standard)
+    }()
 
     /// Key lưu thời điểm quét photo library gần nhất (catch-up scan)
     static let lastPhotoScanKey = "lastPhotoScanDate"

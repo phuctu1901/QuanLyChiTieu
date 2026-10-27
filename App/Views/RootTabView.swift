@@ -47,11 +47,11 @@ struct RootTabView: View {
     var body: some View {
         TabView {
             TodayView()
-                .tabItem { Label("Hôm nay", systemImage: "sun.max.fill") }
+                .tabItem { Label("Giao dịch", systemImage: "list.bullet.rectangle.portrait") }
             StatsView()
                 .tabItem { Label("Thống kê", systemImage: "chart.pie.fill") }
             BudgetView()
-                .tabItem { Label("Ngân sách", systemImage: "wallet.bifold") }
+                .tabItem { Label("Ngân sách", systemImage: "wallet.pass") }
             SettingsView()
                 .tabItem { Label("Cài đặt", systemImage: "gearshape.fill") }
         }
