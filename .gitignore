@@ -5,3 +5,10 @@ DerivedData/
 build/
 xcuserdata/
 *.xcresult
+
+# Dữ liệu cá nhân & làm việc tạm — không đẩy lên remote
+biendongsodu/
+test-image/
+scratch/
+ml-training/
+metadata_dump*.txt
